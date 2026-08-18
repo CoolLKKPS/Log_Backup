@@ -4,6 +4,7 @@
 	"website_url": "",
 	"description": "",
 	"dependencies": [
-		"BepInEx-BepInExPack-5.4.2305"
+		"BepInEx-BepInExPack-5.4.2305",
+		"Rune580-LethalCompany_InputUtils-0.7.13"
 	]
 }
