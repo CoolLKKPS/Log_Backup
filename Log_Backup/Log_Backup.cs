@@ -1,7 +1,12 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
+using HarmonyLib;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -24,6 +29,7 @@ namespace Log_Backup
         private bool _quitHandled;
         private bool _inputUtilsReady;
         private Key _markerFallbackKey;
+        private ConfigEntry<bool> _runningCode;
         private string _backupFolder;
         private string _playerLogPath;
         private string _playerPrevLogPath;
@@ -38,6 +44,8 @@ namespace Log_Backup
 
             _markerFallbackKey = Config.Bind("Log_Backup", "MarkerFallbackKey", Key.F9, "Fallback key used when InputUtils is not loaded.").Value;
 
+            _runningCode = Config.Bind("Log_Backup", "RunningCode", false, "When enabled, records which Update/LateUpdate/FixedUpdate methods ran in the last 5 seconds and prints them when the marker key is pressed. This requires patching those methods.");
+
             _playerLogPath = Application.consoleLogPath;
             _playerPrevLogPath = Path.Combine(Path.GetDirectoryName(_playerLogPath), "Player-prev.log");
             _logOutputPath = Path.Combine(Paths.BepInExRootPath, "LogOutput.log");
@@ -45,6 +53,11 @@ namespace Log_Backup
             _backupFolder = Path.Combine(Paths.BepInExRootPath, "Log_Backup", DateTime.Now.ToString("MM-dd-yyyy_HH-mm-ss"));
             TryBackupPrevLog();
             SetupMarkerInput();
+            if (_runningCode.Value)
+            {
+                try { RunningCode.Apply(new Harmony(PLUGIN_GUID)); }
+                catch { }
+            }
         }
 
         private void Update()
@@ -60,7 +73,7 @@ namespace Log_Backup
             _markerPressed = true;
             var time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
             Debug.Log($"[Log_Backup] {MarkerToken} {time}");
-            Debug.Log("[Log_Backup] Stack trace:\n" + Environment.StackTrace);
+            if (_runningCode.Value) RunningCode.Pending = true;
 
             try
             {
@@ -150,6 +163,61 @@ namespace Log_Backup
                 {
                     _inputUtilsReady = false;
                 }
+            }
+        }
+
+        private static class RunningCode
+        {
+            private static readonly Dictionary<string, float> Seen = new Dictionary<string, float>();
+            private static readonly HashSet<MethodBase> ThisFrame = new HashSet<MethodBase>();
+            private static int _frame = -1;
+            public static bool Pending;
+
+            public static void Apply(Harmony harmony)
+            {
+                var postfix = new HarmonyMethod(AccessTools.Method(typeof(RunningCode), nameof(Capture)));
+                foreach (var type in AccessTools.AllTypes())
+                {
+                    // Skip abstract/interface/generic types (no patchable method body) and our own plugin (self-noise).
+                    if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition || type == typeof(Log_BackupPlugin))
+                        continue;
+                    // Unity only invokes Update/LateUpdate/FixedUpdate on MonoBehaviours.
+                    if (!typeof(MonoBehaviour).IsAssignableFrom(type))
+                        continue;
+                    foreach (var m in AccessTools.GetDeclaredMethods(type))
+                    {
+                        // Only non-static lifecycle callbacks are what we watch.
+                        if ((m.Name != "Update" && m.Name != "LateUpdate" && m.Name != "FixedUpdate") || m.IsStatic)
+                            continue;
+                        try { harmony.Patch(m, postfix: postfix); }
+                        catch { }
+                    }
+                }
+            }
+
+            public static void Capture(MethodBase __originalMethod)
+            {
+                try
+                {
+                    if (Time.frameCount != _frame)
+                    {
+                        _frame = Time.frameCount;
+                        ThisFrame.Clear();
+                    }
+                    if (ThisFrame.Add(__originalMethod))
+                        Seen[__originalMethod.DeclaringType.Name + "." + __originalMethod.Name] = Time.time;
+
+                    if (!Pending)
+                        return;
+                    Pending = false;
+
+                    var cutoff = Time.time - 5f;
+                    var lines = Seen.Where(kv => kv.Value >= cutoff)
+                                    .OrderByDescending(kv => kv.Value)
+                                    .Select(kv => "  " + kv.Key);
+                    Debug.Log("[Log_Backup] Running in the last 5 seconds:\n" + string.Join("\n", lines));
+                }
+                catch { }
             }
         }
     }
