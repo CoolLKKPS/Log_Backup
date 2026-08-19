@@ -2,7 +2,7 @@
 	"name": "Log_Backup",
 	"version_number": "1.0.0",
 	"website_url": "",
-	"description": "",
+	"description": "This mod provides a simple way for user to point out issues",
 	"dependencies": [
 		"BepInEx-BepInExPack-5.4.2305"
 	]

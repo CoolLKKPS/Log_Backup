@@ -3,7 +3,7 @@ using System.Reflection;
 
 [assembly: AssemblyVersion(Log_BackupPlugin.PLUGIN_VERSION_FULL)]
 [assembly: AssemblyCompany(Log_BackupPlugin.PLUGIN_NAME)]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("This mod provides a simple way for user to point out issues")]
 [assembly: AssemblyFileVersion(Log_BackupPlugin.PLUGIN_VERSION_FULL)]
 [assembly: AssemblyInformationalVersion(Log_BackupPlugin.PLUGIN_VERSION)]
 [assembly: AssemblyProduct(Log_BackupPlugin.PLUGIN_NAME)]

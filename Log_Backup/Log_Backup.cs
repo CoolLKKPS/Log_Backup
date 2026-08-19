@@ -16,7 +16,7 @@ namespace Log_Backup
     [BepInDependency("com.rune580.LethalCompanyInputUtils", BepInDependency.DependencyFlags.SoftDependency)]
     public class Log_BackupPlugin : BaseUnityPlugin
     {
-        public const string PLUGIN_GUID = "Log_Backup";
+        public const string PLUGIN_GUID = "LKK.Log_Backup";
         public const string PLUGIN_NAME = "Log_Backup";
         public const string PLUGIN_VERSION = "1.0.0";
         public const string PLUGIN_VERSION_FULL = PLUGIN_VERSION + ".0";
@@ -27,14 +27,13 @@ namespace Log_Backup
         public static Log_BackupPlugin Instance;
         private bool _markerPressed;
         private bool _quitHandled;
-        private bool _inputUtilsReady;
         private Key _markerFallbackKey;
         private ConfigEntry<bool> _runningCode;
         private string _backupFolder;
         private string _playerLogPath;
         private string _playerPrevLogPath;
         private string _logOutputPath;
-        private LogBackupInputs _inputs;
+        private InputAction _fallbackAction;
 
         private void Awake()
         {
@@ -58,14 +57,6 @@ namespace Log_Backup
                 try { RunningCode.Apply(new Harmony(PLUGIN_GUID)); }
                 catch { }
             }
-        }
-
-        private void Update()
-        {
-            if (_inputUtilsReady || Keyboard.current == null)
-                return;
-            if (Keyboard.current[_markerFallbackKey].wasPressedThisFrame)
-                OnMarkerPerformed(default);
         }
 
         private void OnMarkerPerformed(InputAction.CallbackContext context)
@@ -153,16 +144,38 @@ namespace Log_Backup
         {
             if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(InputUtilsGuid))
             {
-                try
-                {
-                    _inputs = new LogBackupInputs();
-                    _inputs.MarkerKey.performed += OnMarkerPerformed;
-                    _inputUtilsReady = true;
-                }
-                catch
-                {
-                    _inputUtilsReady = false;
-                }
+                TrySetupInputUtils();
+                return;
+            }
+            SetupFallbackInput();
+        }
+
+        private void TrySetupInputUtils()
+        {
+            try
+            {
+                var inputs = new LogBackupInputs();
+                inputs.MarkerKey.performed += OnMarkerPerformed;
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning($"[Log_Backup] LethalCompanyInputUtils keybind setup failed: {e.Message}");
+                SetupFallbackInput();
+            }
+        }
+
+        private void SetupFallbackInput()
+        {
+            var binding = $"<Keyboard>/{_markerFallbackKey.ToString().ToLowerInvariant()}";
+            try
+            {
+                _fallbackAction = new InputAction("Log_Backup Marker", InputActionType.Button, binding);
+                _fallbackAction.performed += OnMarkerPerformed;
+                _fallbackAction.Enable();
+            }
+            catch (Exception e)
+            {
+                logger.LogError($"[Log_Backup] Failed to bind fallback input {binding}: {e.Message}");
             }
         }
 
