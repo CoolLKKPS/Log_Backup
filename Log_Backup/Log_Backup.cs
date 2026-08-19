@@ -169,6 +169,7 @@ namespace Log_Backup
         private static class RunningCode
         {
             private static readonly Dictionary<string, float> Seen = new Dictionary<string, float>();
+            private static readonly Dictionary<string, MethodBase> Methods = new Dictionary<string, MethodBase>();
             private static readonly HashSet<MethodBase> ThisFrame = new HashSet<MethodBase>();
             private static int _frame = -1;
             public static bool Pending;
@@ -205,7 +206,11 @@ namespace Log_Backup
                         ThisFrame.Clear();
                     }
                     if (ThisFrame.Add(__originalMethod))
-                        Seen[__originalMethod.DeclaringType.Name + "." + __originalMethod.Name] = Time.time;
+                    {
+                        var name = __originalMethod.DeclaringType.Name + "." + __originalMethod.Name;
+                        Seen[name] = Time.time;
+                        Methods[name] = __originalMethod;
+                    }
 
                     if (!Pending)
                         return;
@@ -214,10 +219,25 @@ namespace Log_Backup
                     var cutoff = Time.time - 5f;
                     var lines = Seen.Where(kv => kv.Value >= cutoff)
                                     .OrderByDescending(kv => kv.Value)
-                                    .Select(kv => "  " + kv.Key);
+                                    .Select(kv => "  " + (IsModPatched(Methods[kv.Key]) ? "* " : "") + kv.Key);
                     Debug.Log("[Log_Backup] Running in the last 5 seconds:\n" + string.Join("\n", lines));
                 }
                 catch { }
+            }
+
+            private static bool IsModPatched(MethodBase m)
+            {
+                try
+                {
+                    var info = Harmony.GetPatchInfo(m);
+                    if (info == null)
+                        return false;
+                    return info.Prefixes.Any(p => p.owner != PLUGIN_GUID)
+                        || info.Postfixes.Any(p => p.owner != PLUGIN_GUID)
+                        || info.Transpilers.Any(p => p.owner != PLUGIN_GUID)
+                        || info.Finalizers.Any(p => p.owner != PLUGIN_GUID);
+                }
+                catch { return false; }
             }
         }
     }
